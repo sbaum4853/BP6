@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP32 + L298N + Two DC Motors — Wiring &amp; Code</title>
+<style>
+  :root{
+    --bg:#f6f4ef; --card:#ffffff; --ink:#1d1f24; --muted:#5b616e; --line:#e2ded5;
+    --accent:#1f6feb; --warn:#b54708; --warnbg:#fff4e5; --okbg:#eaf6ee; --ok:#1a7f37;
+    --code:#0f1420; --codeink:#e6edf3;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  main{max-width:980px;margin:0 auto;padding:32px 20px 64px}
+  h1{font-size:2rem;line-height:1.2;margin:0 0 6px}
+  h2{font-size:1.35rem;margin:40px 0 12px;padding-top:8px;border-top:2px solid var(--line)}
+  h3{font-size:1.05rem;margin:22px 0 8px}
+  p.lede{color:var(--muted);margin:0 0 20px;font-size:1.05rem}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:14px 0}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+  .grid .card{margin:0}
+  ul,ol{padding-left:22px} li{margin:4px 0}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;font-size:.95rem}
+  th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line)}
+  th{background:#efece5;font-weight:600}
+  tr:last-child td{border-bottom:none}
+  .sw{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:-2px;margin-right:6px;border:1px solid rgba(0,0,0,.25)}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.92em;background:#ece9e2;padding:1px 5px;border-radius:4px}
+  .note{border-left:4px solid var(--accent);background:#eef4ff}
+  .warn{border-left:4px solid var(--warn);background:var(--warnbg)}
+  .ok{border-left:4px solid var(--ok);background:var(--okbg)}
+  .diagram{background:#fbfaf7;border:1px solid var(--line);border-radius:12px;padding:8px;overflow-x:auto}
+  .diagram svg{width:100%;min-width:720px;height:auto;display:block}
+  .codewrap{position:relative}
+  pre{background:var(--code);color:var(--codeink);padding:18px 18px;border-radius:12px;overflow-x:auto;font:13.5px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;margin:0}
+  pre .c{color:#8b949e} pre .k{color:#ff7b72} pre .t{color:#79c0ff} pre .n{color:#a5d6ff} pre .f{color:#d2a8ff}
+  button.copy{position:absolute;top:10px;right:10px;background:#2d3748;color:#fff;border:1px solid #4a5568;border-radius:6px;padding:5px 10px;font-size:.8rem;cursor:pointer}
+  button.copy:hover{background:#3b4658}
+  .pill{display:inline-block;font-size:.78rem;font-weight:600;padding:2px 8px;border-radius:99px;background:#e7e3da;color:var(--muted);margin-right:6px}
+  @media print{body{background:#fff} button.copy{display:none} .card,.diagram,table{break-inside:avoid}}
+</style>
+</head>
+<body>
+<main>
+
+<h1>Wiring an ESP32 to an L298N with Two DC Motors</h1>
+<p class="lede">A 12&nbsp;V battery pack powers the motors through the L298N driver. The L298N's onboard regulator powers the ESP32. The ESP32 runs both motors forward and then backward at full speed.</p>
+
+<div class="grid">
+  <div class="card"><h3 style="margin-top:0">Parts</h3>
+    <ul>
+      <li>ESP32 dev board (DevKit V1 / DevKitC)</li>
+      <li>L298N dual H-bridge module (red board, black heatsink)</li>
+      <li>2 × DC gear motors (6–12&nbsp;V)</li>
+      <li>12&nbsp;V battery pack (e.g. 8 × AA)</li>
+      <li>Female-to-female or female-to-male jumper wires</li>
+      <li>Small screwdriver for the screw terminals</li>
+    </ul>
+  </div>
+  <div class="card"><h3 style="margin-top:0">How power flows</h3>
+    <ul>
+      <li><b>12&nbsp;V</b> goes into the L298N and drives the motors.</li>
+      <li>The L298N's regulator makes <b>5&nbsp;V</b>, which feeds the ESP32's <code>VIN</code> pin.</li>
+      <li><b>All grounds are tied together</b>: battery, L298N, and ESP32.</li>
+      <li>The ESP32's 3.3&nbsp;V signals tell the L298N which way to spin each motor.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="card warn"><b>Before you wire anything:</b> keep the battery pack disconnected until every wire is in place and checked. <b>Never</b> connect 12&nbsp;V to any ESP32 pin. The ESP32 only ever gets 5&nbsp;V (on <code>VIN</code>) or 3.3&nbsp;V.</div>
+
+<h2>1. Wiring diagram</h2>
+<div class="diagram">
+<svg viewBox="0 0 960 620" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
+  <defs>
+    <style>
+      .w{fill:none;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}
+      .lbl{font-size:12px;fill:#1d1f24}
+      .sm{font-size:10.5px;fill:#ffffff;font-weight:600}
+      .title{font-size:15px;font-weight:700;fill:#ffffff}
+      .dk{font-size:13px;font-weight:700;fill:#1d1f24}
+    </style>
+  </defs>
+
+  <!-- ===== L298N board ===== -->
+  <rect x="340" y="60" width="280" height="262" rx="10" fill="#c0392b" stroke="#7b241c" stroke-width="2"/>
+  <!-- heatsink -->
+  <rect x="420" y="72" width="120" height="70" rx="4" fill="#2b2b2b"/>
+  <g stroke="#4a4a4a" stroke-width="3">
+    <line x1="432" y1="76" x2="432" y2="138"/><line x1="447" y1="76" x2="447" y2="138"/><line x1="462" y1="76" x2="462" y2="138"/>
+    <line x1="477" y1="76" x2="477" y2="138"/><line x1="492" y1="76" x2="492" y2="138"/><line x1="507" y1="76" x2="507" y2="138"/>
+    <line x1="522" y1="76" x2="522" y2="138"/>
+  </g>
+  <text x="480" y="172" text-anchor="middle" class="title">L298N</text>
+  <text x="480" y="190" text-anchor="middle" class="sm" style="font-weight:400">dual H-bridge</text>
+
+  <!-- motor terminal blocks -->
+  <rect x="342" y="132" width="34" height="76" rx="3" fill="#1565c0"/>
+  <text x="384" y="154" class="sm">OUT1</text><text x="384" y="194" class="sm">OUT2</text>
+  <rect x="584" y="132" width="34" height="76" rx="3" fill="#1565c0"/>
+  <text x="577" y="154" text-anchor="end" class="sm">OUT3</text><text x="577" y="194" text-anchor="end" class="sm">OUT4</text>
+
+  <!-- 5V-EN jumper -->
+  <rect x="356" y="228" width="40" height="16" rx="3" fill="#111"/>
+  <text x="402" y="240" class="sm">5V-EN jumper: ON</text>
+
+  <!-- power terminal block -->
+  <rect x="352" y="282" width="116" height="40" rx="3" fill="#1565c0"/>
+  <text x="370" y="276" text-anchor="middle" class="sm">+12V</text>
+  <text x="410" y="276" text-anchor="middle" class="sm">GND</text>
+  <text x="450" y="276" text-anchor="middle" class="sm">+5V</text>
+
+  <!-- header pins -->
+  <rect x="478" y="300" width="134" height="22" rx="2" fill="#222"/>
+  <g class="sm" text-anchor="middle">
+    <text x="490" y="276">ENA</text><text x="512" y="290">IN1</text><text x="534" y="276">IN2</text>
+    <text x="556" y="290">IN3</text><text x="578" y="276">IN4</text><text x="600" y="290">ENB</text>
+  </g>
+  <g fill="#d4af37">
+    <rect x="486" y="306" width="8" height="10"/><rect x="508" y="306" width="8" height="10"/><rect x="530" y="306" width="8" height="10"/>
+    <rect x="552" y="306" width="8" height="10"/><rect x="574" y="306" width="8" height="10"/><rect x="596" y="306" width="8" height="10"/>
+  </g>
+  <text x="545" y="248" text-anchor="middle" class="sm" style="font-weight:400">ENA / ENB jumpers removed</text>
+
+  <!-- ===== Motors ===== -->
+  <g>
+    <rect x="70" y="138" width="110" height="64" rx="10" fill="#9aa3ad" stroke="#5b616e" stroke-width="2"/>
+    <rect x="40" y="160" width="32" height="20" rx="3" fill="#f2c94c" stroke="#a07d1c"/>
+    <text x="125" y="176" text-anchor="middle" class="dk">Motor A</text>
+    <text x="125" y="226" text-anchor="middle" class="lbl">(left wheel)</text>
+  </g>
+  <g>
+    <rect x="780" y="138" width="110" height="64" rx="10" fill="#9aa3ad" stroke="#5b616e" stroke-width="2"/>
+    <rect x="888" y="160" width="32" height="20" rx="3" fill="#f2c94c" stroke="#a07d1c"/>
+    <text x="835" y="176" text-anchor="middle" class="dk">Motor B</text>
+    <text x="835" y="226" text-anchor="middle" class="lbl">(right wheel)</text>
+  </g>
+  <!-- motor wires -->
+  <path class="w" stroke="#d35400" d="M180 155 H350"/>
+  <path class="w" stroke="#7f8c8d" d="M180 190 H350"/>
+  <path class="w" stroke="#d35400" d="M780 155 H610"/>
+  <path class="w" stroke="#7f8c8d" d="M780 190 H610"/>
+
+  <!-- ===== Battery ===== -->
+  <rect x="50" y="430" width="210" height="110" rx="10" fill="#2f3640" stroke="#111" stroke-width="2"/>
+  <g fill="#c7a008">
+    <rect x="64" y="448" width="22" height="74" rx="4"/><rect x="88" y="448" width="22" height="74" rx="4"/>
+    <rect x="112" y="448" width="22" height="74" rx="4"/><rect x="136" y="448" width="22" height="74" rx="4"/>
+  </g>
+  <text x="208" y="482" text-anchor="middle" class="title">12 V</text>
+  <text x="208" y="500" text-anchor="middle" class="sm" style="font-weight:400">battery pack</text>
+  <text x="250" y="450" text-anchor="end" class="sm" style="fill:#ff6b6b">+</text>
+  <text x="250" y="525" text-anchor="end" class="sm" style="fill:#ccc">−</text>
+
+  <!-- ===== ESP32 ===== -->
+  <rect x="596" y="440" width="270" height="140" rx="8" fill="#1e2a3a" stroke="#0b1220" stroke-width="2"/>
+  <rect x="770" y="490" width="70" height="56" rx="4" fill="#b8bec7"/>
+  <text x="805" y="522" text-anchor="middle" style="font-size:11px;font-weight:700;fill:#1e2a3a">ESP32</text>
+  <rect x="852" y="545" width="22" height="20" rx="3" fill="#888"/>
+  <text x="700" y="560" text-anchor="middle" class="sm" style="font-weight:400">USB (for uploading code)</text>
+  <g fill="#d4af37">
+    <rect x="616" y="440" width="8" height="10"/><rect x="646" y="440" width="8" height="10"/>
+    <rect x="686" y="440" width="8" height="10"/><rect x="716" y="440" width="8" height="10"/><rect x="746" y="440" width="8" height="10"/>
+    <rect x="776" y="440" width="8" height="10"/><rect x="806" y="440" width="8" height="10"/><rect x="836" y="440" width="8" height="10"/>
+  </g>
+  <g class="sm" text-anchor="middle">
+    <text x="620" y="466">GND</text><text x="650" y="480">VIN</text>
+    <text x="690" y="466">14</text><text x="720" y="480">27</text><text x="750" y="466">26</text>
+    <text x="780" y="480">25</text><text x="810" y="466">33</text><text x="840" y="480">32</text>
+  </g>
+
+  <!-- ===== Power wires ===== -->
+  <!-- battery + to 12V -->
+  <path class="w" stroke="#e53935" d="M260 455 H370 V318"/>
+  <!-- battery - to GND (joins ground net) -->
+  <path class="w" stroke="#111" d="M260 515 H410 V428"/>
+  <!-- L298N GND to ESP32 GND -->
+  <path class="w" stroke="#111" d="M410 318 V428 H620 V446"/>
+  <circle cx="410" cy="428" r="6" fill="#111"/>
+  <!-- L298N 5V to ESP32 VIN -->
+  <path class="w" stroke="#f39c12" d="M450 318 V414 H650 V446"/>
+
+  <!-- ===== Signal wires (rightmost header wire runs highest so none cross) ===== -->
+  <path class="w" stroke="#f1c40f" d="M490 312 V400 H690 V446"/>  <!-- ENA -> 14 -->
+  <path class="w" stroke="#27ae60" d="M512 312 V390 H720 V446"/>  <!-- IN1 -> 27 -->
+  <path class="w" stroke="#2e86de" d="M534 312 V380 H750 V446"/>  <!-- IN2 -> 26 -->
+  <path class="w" stroke="#8e44ad" d="M556 312 V370 H780 V446"/>  <!-- IN3 -> 25 -->
+  <path class="w" stroke="#95a5a6" d="M578 312 V360 H810 V446"/>  <!-- IN4 -> 33 -->
+  <path class="w" stroke="#8d5524" d="M600 312 V350 H840 V446"/>  <!-- ENB -> 32 -->
+
+  <!-- legend -->
+  <g transform="translate(40,580)" class="lbl">
+    <rect x="0" y="-11" width="14" height="6" fill="#e53935"/><text x="20" y="-4">12 V</text>
+    <rect x="70" y="-11" width="14" height="6" fill="#111"/><text x="90" y="-4">GND (common)</text>
+    <rect x="200" y="-11" width="14" height="6" fill="#f39c12"/><text x="220" y="-4">5 V</text>
+  </g>
+  <text x="40" y="604" class="lbl" fill="#5b616e">Grounds are joined at the dot. Battery −, L298N GND, and ESP32 GND all share one screw terminal.</text>
+</svg>
+</div>
+
+<h2>2. Connection table</h2>
+<table>
+  <thead><tr><th>Wire</th><th>From</th><th>To</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td><span class="sw" style="background:#e53935"></span>Red</td><td>Battery <b>+</b></td><td>L298N <code>+12V</code></td><td>Motor power</td></tr>
+    <tr><td><span class="sw" style="background:#111"></span>Black</td><td>Battery <b>−</b></td><td>L298N <code>GND</code></td><td>Motor power return</td></tr>
+    <tr><td><span class="sw" style="background:#111"></span>Black</td><td>L298N <code>GND</code></td><td>ESP32 <code>GND</code></td><td>Common ground. Without it the signals have no reference.</td></tr>
+    <tr><td><span class="sw" style="background:#f39c12"></span>Orange</td><td>L298N <code>+5V</code></td><td>ESP32 <code>VIN</code></td><td>Powers the ESP32 from the battery</td></tr>
+    <tr><td><span class="sw" style="background:#f1c40f"></span>Yellow</td><td>L298N <code>ENA</code></td><td>ESP32 <code>GPIO 14</code></td><td>Motor A on/off</td></tr>
+    <tr><td><span class="sw" style="background:#27ae60"></span>Green</td><td>L298N <code>IN1</code></td><td>ESP32 <code>GPIO 27</code></td><td>Motor A direction</td></tr>
+    <tr><td><span class="sw" style="background:#2e86de"></span>Blue</td><td>L298N <code>IN2</code></td><td>ESP32 <code>GPIO 26</code></td><td>Motor A direction</td></tr>
+    <tr><td><span class="sw" style="background:#8e44ad"></span>Purple</td><td>L298N <code>IN3</code></td><td>ESP32 <code>GPIO 25</code></td><td>Motor B direction</td></tr>
+    <tr><td><span class="sw" style="background:#95a5a6"></span>Gray</td><td>L298N <code>IN4</code></td><td>ESP32 <code>GPIO 33</code></td><td>Motor B direction</td></tr>
+    <tr><td><span class="sw" style="background:#8d5524"></span>Brown</td><td>L298N <code>ENB</code></td><td>ESP32 <code>GPIO 32</code></td><td>Motor B on/off</td></tr>
+    <tr><td>Motor leads</td><td>Motor A (2 wires)</td><td><code>OUT1</code> and <code>OUT2</code></td><td>Either order. Swap them to reverse that motor.</td></tr>
+    <tr><td>Motor leads</td><td>Motor B (2 wires)</td><td><code>OUT3</code> and <code>OUT4</code></td><td>Either order. Swap them to reverse that motor.</td></tr>
+  </tbody>
+</table>
+
+<h2>3. Jumpers on the L298N</h2>
+<div class="grid">
+  <div class="card ok"><span class="pill">KEEP ON</span><b>5V-EN jumper</b> (next to the power terminal)<br>This turns on the onboard 5&nbsp;V regulator so the <code>+5V</code> terminal outputs 5&nbsp;V for the ESP32. Leave it on for any supply up to 12&nbsp;V.</div>
+  <div class="card warn"><span class="pill">REMOVE</span><b>ENA and ENB jumpers</b> (the little caps on the enable pins)<br>Pull them off so the ESP32 controls the enable pins. Use the pin <i>closest to the board edge</i>; that's the actual ENA/ENB input. The other pin is just 5&nbsp;V.</div>
+</div>
+<div class="card note"><b>Shortcut:</b> because this sketch only runs at full speed, you <i>could</i> leave the ENA/ENB jumpers on and skip those two wires, since the jumpers hold the motors enabled. Wiring them to the ESP32 means you're already set up for PWM speed control later.</div>
+
+<h2>4. How the L298N chooses direction</h2>
+<table>
+  <thead><tr><th>ENA</th><th>IN1</th><th>IN2</th><th>Motor A does…</th></tr></thead>
+  <tbody>
+    <tr><td>HIGH</td><td>HIGH</td><td>LOW</td><td>Forward, full speed</td></tr>
+    <tr><td>HIGH</td><td>LOW</td><td>HIGH</td><td>Backward, full speed</td></tr>
+    <tr><td>HIGH</td><td>LOW</td><td>LOW</td><td>Coast to a stop</td></tr>
+    <tr><td>HIGH</td><td>HIGH</td><td>HIGH</td><td>Brake (quick stop)</td></tr>
+    <tr><td>LOW</td><td>any</td><td>any</td><td>Off (coast)</td></tr>
+  </tbody>
+</table>
+<p>Motor B works the same way with <code>ENB</code>, <code>IN3</code>, and <code>IN4</code>.</p>
+
+<h2>5. The code (Arduino IDE)</h2>
+<p>Install the ESP32 boards package in the Arduino IDE (Boards Manager → search "esp32" by Espressif) and select <b>ESP32 Dev Module</b>. The sketch runs both motors forward for 2 seconds, pauses, runs them backward for 2 seconds, pauses, and repeats.</p>
+
+<div class="codewrap">
+<button class="copy" onclick="copyCode(this)">Copy</button>
+<pre id="sketch"><span class="c">// ESP32 + L298N: two DC motors, forward and backward at full speed</span>
+
+<span class="c">// ---- Motor A (left) ----</span>
+<span class="k">const int</span> ENA = <span class="n">14</span>;   <span class="c">// enable A</span>
+<span class="k">const int</span> IN1 = <span class="n">27</span>;
+<span class="k">const int</span> IN2 = <span class="n">26</span>;
+
+<span class="c">// ---- Motor B (right) ----</span>
+<span class="k">const int</span> IN3 = <span class="n">25</span>;
+<span class="k">const int</span> IN4 = <span class="n">33</span>;
+<span class="k">const int</span> ENB = <span class="n">32</span>;   <span class="c">// enable B</span>
+
+<span class="k">const int</span> RUN_TIME   = <span class="n">2000</span>;  <span class="c">// ms each direction</span>
+<span class="k">const int</span> PAUSE_TIME = <span class="n">500</span>;   <span class="c">// ms stopped between directions</span>
+
+<span class="t">void</span> <span class="f">setup</span>() {
+  Serial.<span class="f">begin</span>(<span class="n">115200</span>);
+
+  <span class="f">pinMode</span>(ENA, OUTPUT);
+  <span class="f">pinMode</span>(IN1, OUTPUT);
+  <span class="f">pinMode</span>(IN2, OUTPUT);
+  <span class="f">pinMode</span>(IN3, OUTPUT);
+  <span class="f">pinMode</span>(IN4, OUTPUT);
+  <span class="f">pinMode</span>(ENB, OUTPUT);
+
+  <span class="f">stopMotors</span>();
+
+  <span class="c">// Enable pins held HIGH = full speed, always</span>
+  <span class="f">digitalWrite</span>(ENA, HIGH);
+  <span class="f">digitalWrite</span>(ENB, HIGH);
+
+  Serial.<span class="f">println</span>(<span class="n">"Motors ready"</span>);
+}
+
+<span class="t">void</span> <span class="f">forward</span>() {
+  <span class="f">digitalWrite</span>(IN1, HIGH);  <span class="f">digitalWrite</span>(IN2, LOW);   <span class="c">// Motor A forward</span>
+  <span class="f">digitalWrite</span>(IN3, HIGH);  <span class="f">digitalWrite</span>(IN4, LOW);   <span class="c">// Motor B forward</span>
+}
+
+<span class="t">void</span> <span class="f">backward</span>() {
+  <span class="f">digitalWrite</span>(IN1, LOW);   <span class="f">digitalWrite</span>(IN2, HIGH);  <span class="c">// Motor A backward</span>
+  <span class="f">digitalWrite</span>(IN3, LOW);   <span class="f">digitalWrite</span>(IN4, HIGH);  <span class="c">// Motor B backward</span>
+}
+
+<span class="t">void</span> <span class="f">stopMotors</span>() {
+  <span class="f">digitalWrite</span>(IN1, LOW);   <span class="f">digitalWrite</span>(IN2, LOW);   <span class="c">// coast</span>
+  <span class="f">digitalWrite</span>(IN3, LOW);   <span class="f">digitalWrite</span>(IN4, LOW);
+}
+
+<span class="t">void</span> <span class="f">loop</span>() {
+  Serial.<span class="f">println</span>(<span class="n">"Forward"</span>);
+  <span class="f">forward</span>();
+  <span class="f">delay</span>(RUN_TIME);
+
+  Serial.<span class="f">println</span>(<span class="n">"Stop"</span>);
+  <span class="f">stopMotors</span>();
+  <span class="f">delay</span>(PAUSE_TIME);   <span class="c">// let the motors spin down before reversing</span>
+
+  Serial.<span class="f">println</span>(<span class="n">"Backward"</span>);
+  <span class="f">backward</span>();
+  <span class="f">delay</span>(RUN_TIME);
+
+  Serial.<span class="f">println</span>(<span class="n">"Stop"</span>);
+  <span class="f">stopMotors</span>();
+  <span class="f">delay</span>(PAUSE_TIME);
+}</pre>
+</div>
+
+<div class="card note"><b>Why the pause?</b> Slamming a spinning motor straight into reverse pulls a big current spike. That spike can sag the 5&nbsp;V line and reset the ESP32. A half-second stop between directions avoids it.</div>
+
+<h2>6. Upload and test, in this order</h2>
+<ol>
+  <li><b>Unplug the battery and disconnect the orange 5&nbsp;V wire from <code>VIN</code>.</b> That keeps two power sources from feeding the ESP32 at the same time.</li>
+  <li>Plug the ESP32 into your computer by USB and upload the sketch. (Some boards need you to hold <b>BOOT</b> when "Connecting…" appears.)</li>
+  <li>Unplug the USB cable.</li>
+  <li>Reconnect the orange wire to <code>VIN</code>, then connect the battery pack.</li>
+  <li>The wheels should spin forward for 2&nbsp;s, stop, spin backward for 2&nbsp;s, and repeat. Prop the robot up so the wheels are off the table.</li>
+</ol>
+<div class="card note"><b>Want to watch Serial Monitor while it runs?</b> Leave the orange 5&nbsp;V wire disconnected and keep USB plugged in. The ESP32 runs from USB, the motors run from the battery, and the black ground wire still ties them together.</div>
+
+<h2>7. Troubleshooting</h2>
+<table>
+  <thead><tr><th>Symptom</th><th>Likely cause / fix</th></tr></thead>
+  <tbody>
+    <tr><td>Nothing spins at all</td><td>Missing common ground between the ESP32 and L298N. Or the battery is flat. Or the screw terminals aren't tight (tug each wire).</td></tr>
+    <tr><td>One motor spins the wrong way</td><td>Swap that motor's two wires at its <code>OUT</code> terminals. No code change needed.</td></tr>
+    <tr><td>Only one motor works</td><td>Check that motor's <code>EN</code> and <code>IN</code> wires, and that its EN jumper isn't half-seated.</td></tr>
+    <tr><td>ESP32 resets or the LED flickers when motors start or reverse</td><td>Voltage sag. Use fresh batteries, keep the stop pause, and put a 470–1000&nbsp;µF capacitor across the L298N's 12&nbsp;V and GND terminals.</td></tr>
+    <tr><td>ESP32 doesn't power on from the battery</td><td>5V-EN jumper missing. Or the orange wire went to <code>3V3</code> instead of <code>VIN</code>/<code>5V</code>.</td></tr>
+    <tr><td>Motors weaker than expected</td><td>Normal: the L298N drops about 2&nbsp;V, so a 12&nbsp;V pack gives roughly 10&nbsp;V at the motors. It also gets warm, which is what the heatsink is for.</td></tr>
+    <tr><td>Upload fails</td><td>Hold <b>BOOT</b> during "Connecting…". Use a data USB cable, not a charge-only one. Pick the right COM/serial port.</td></tr>
+  </tbody>
+</table>
+
+<div class="card warn"><b>Battery note:</b> eight fresh AAs or a 12&nbsp;V NiMH pack is fine. A 3S LiPo reads up to 12.6&nbsp;V when full. That works for the motors, but it's at the top of the onboard 5&nbsp;V regulator's range. Above 12&nbsp;V, remove the 5V-EN jumper and power the ESP32 from a separate 5&nbsp;V source (still sharing ground).</div>
+
+<h2>Next step: speed control</h2>
+<p>Because ENA and ENB are on ESP32 pins, you can replace the <code>digitalWrite(ENA, HIGH)</code> lines with PWM later. On ESP32 Arduino core 3.x that's <code>analogWrite(ENA, 180);</code> (0–255) for roughly 70% speed, with no rewiring.</p>
+
+</main>
+<script>
+function copyCode(btn){
+  const text = document.getElementById('sketch').innerText;
+  const done = () => { btn.textContent = 'Copied!'; setTimeout(()=>btn.textContent='Copy',1500); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(fallback);
+  } else { fallback(); }
+  function fallback(){
+    const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta);
+    ta.select(); try{document.execCommand('copy'); done();}catch(e){} ta.remove();
+  }
+}
+</script>
+</body>
+</html>
